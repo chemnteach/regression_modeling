@@ -24,6 +24,14 @@ debug.log
 *.xlsx 
 *.parquet 
 *.feather 
+
+# Trained model files (too large for git)
+*.pkl 
+*.pickle 
+*.joblib 
+*.h5 
+*.hdf5 
+*.model 
  
 *.env 
 .env.* 
