@@ -738,15 +738,29 @@ Four-tab workbook with comprehensive analysis:
 ---
 
 ### 3. Model Performance Plots (PNG)
-**Filenames**: `best_model_<ModelName>_<plot_type>.png`
+**Location**: `data/` folder  
+**Filenames**: `<ModelName>_<plot_type>_YYYYMMDD_HHMMSS.png`
 
-Three high-resolution (300 DPI) plots:
+Three high-resolution (300 DPI) plots generated for each model and stacking ensemble:
 
-1. **Predicted vs Actual**: Scatter plot with perfect prediction line
-2. **Residuals CDF/PDF**: Distribution analysis with KDE overlay
-3. **Residuals Distribution**: Histogram with zero-error reference
+1. **Predicted vs Actual**: Scatter plot with perfect prediction line (`*_predicted_vs_actual_*.png`)
+2. **Residuals CDF/PDF**: Distribution analysis with 95% threshold (`*_cdf_pdf_residuals_*.png`)
+3. **Residuals Distribution**: Histogram with KDE overlay (`*_residual_distribution_*.png`)
 
-**Use Case**: Presentations, publications, model validation reports
+**Timestamp Format**: YYYYMMDD_HHMMSS ensures unique filenames for each run
+
+**Use Case**: Presentations, publications, model validation reports, performance tracking over time
+
+---
+
+### 4. Dataset Snapshots (CSV)
+**Location**: `data/` folder  
+**Filenames**: Timestamped CSV files at key pipeline stages
+
+- `final_modeling_data_YYYYMMDD_HHMMSS.csv` - Before feature reduction
+- `final_modeling_data_post_feature_selection_YYYYMMDD_HHMMSS.csv` - After feature selection
+
+**Use Case**: Audit trail, reproducibility, data quality verification, intermediate analysis
 
 ---
 
