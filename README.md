@@ -40,7 +40,7 @@ This project provides an end-to-end automated workflow for regression modeling t
 ### System Requirements
 - **Python Version**: 3.10+ (Tested on 3.12.0)
 - **Operating System**: Windows, macOS, or Linux
-- **RAM**: 8GB minimum (16GB recommended for large datasets)
+- **RAM**: 16GB minimum (more recommended for large datasets)
 - **Storage**: 500MB for dependencies + space for your data
 
 ### Python Version Note
@@ -145,8 +145,6 @@ regression_modeling/
 ├── requirements.txt             # Python package dependencies
 ├── README.md                    # This file
 │
-├── GMZ_Resistance_Data.csv     # Example dataset
-│
 └── venv/                        # Virtual environment (created during setup)
 ```
 
@@ -180,13 +178,13 @@ The notebook follows a 7-stage pipeline:
                           ↓
 ┌─────────────────────────────────────────────────────────────┐
 │ 3. INITIAL QUALITY CHECK                                    │
-│    → Remove columns with >50% missing data                  │
+│    → Remove columns with >40% missing data                  │
 │    → Remove date columns, duplicates, high cardinality      │
 └─────────────────────────────────────────────────────────────┘
                           ↓
 ┌─────────────────────────────────────────────────────────────┐
 │ 4. STRATEGIC IMPUTATION                                     │
-│    → <5% missing: Median/mode imputation                    │
+│    → <5% missing: Median imputation                         │
 │    → 5-20% missing: KNN imputation                          │
 │    → 20-40% missing: Iterative imputation                   │
 └─────────────────────────────────────────────────────────────┘
@@ -199,7 +197,7 @@ The notebook follows a 7-stage pipeline:
                           ↓
 ┌─────────────────────────────────────────────────────────────┐
 │ 6. MODEL TRAINING & COMPARISON                              │
-│    → Train 10+ base models with cross-validation           │
+│    → Train 8 base models with cross-validation              │
 │    → Hyperparameter optimization via RandomizedSearchCV     │
 │    → Evaluate using R² scoring                              │
 └─────────────────────────────────────────────────────────────┘
@@ -788,15 +786,6 @@ Three high-resolution (300 DPI) plots generated for each model and stacking ense
 ## 🐛 Troubleshooting
 
 ### Common Issues
-
-#### Issue: "ModuleNotFoundError: No module named 'openpyxl'"
-**Solution**: Install Excel export support:
-```bash
-pip install openpyxl
-```
-**Note**: This may restart your notebook kernel - re-run all cells afterward.
-
----
 
 #### Issue: "Target variable not found in dataset"
 **Cause**: `DEFAULT_TARGET_VARIABLE` doesn't match any column name
