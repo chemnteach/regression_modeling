@@ -1,4 +1,4 @@
-# Regression Modeling with Automated Feature Reduction
+# RAPID: Regression Analysis Pipeline with Intelligent Data preprocessing
 
 A comprehensive machine learning pipeline for regression analysis featuring automated data preprocessing, intelligent feature selection, and ensemble model comparison with stacking capabilities.
 
