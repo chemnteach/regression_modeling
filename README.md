@@ -141,14 +141,11 @@ regression_modeling/
 ├── Feature Reduction.ipynb     # Main analysis notebook (3,100+ lines)
 ├── main.py                      # Project entry point / utilities
 ├── feature_reduction.py         # Core preprocessing functions
-├── EXPORT_TO_EXCEL.py          # Standalone Excel report generator
 │
 ├── requirements.txt             # Python package dependencies
-├── old_requirements.txt         # Legacy dependency list
 ├── README.md                    # This file
 │
 ├── GMZ_Resistance_Data.csv     # Example dataset
-├── Vmin Kitchen Sink.ipynb     # Additional analysis notebook
 │
 └── venv/                        # Virtual environment (created during setup)
 ```
