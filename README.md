@@ -787,42 +787,12 @@ Three high-resolution (300 DPI) plots generated for each model and stacking ense
 
 ### Common Issues
 
-#### Issue: "Target variable not found in dataset"
-**Cause**: `DEFAULT_TARGET_VARIABLE` doesn't match any column name
-
-**Solution**: 
-1. Open your CSV and verify exact column name (case-sensitive)
-2. Update constant: `DEFAULT_TARGET_VARIABLE = "exact_column_name"`
-3. Or set `AUTO_MODE = False` to use interactive selection
-
----
-
 #### Issue: Excel export fails with "name 'feature_statistics' is not defined"
 **Cause**: Kernel was restarted and variables lost
 
 **Solution**:
 1. Re-run entire notebook (Kernel → Restart & Run All)
 2. The Excel report is automatically generated in the final cell
-
----
-
-#### Issue: Plots not saving as PNG files
-**Cause**: Need to execute plot-saving cell
-
-**Solution**:
-1. Ensure notebook has run completely
-2. Execute the final cell that contains plot-saving code
-3. Check working directory for `best_model_*.png` files
-
----
-
-#### Issue: VS Code notebook cells not saving edits
-**Cause**: Known VS Code caching issue with notebook cells
-
-**Workaround**:
-1. Use standalone scripts (`EXPORT_TO_EXCEL.py`) instead
-2. Restart VS Code
-3. Clear VS Code cache: `%APPDATA%\Code\Cache`
 
 ---
 
@@ -840,7 +810,7 @@ For Intel networks: `http://proxy-dmz.intel.com:912`
 **For Large Datasets (>1M rows)**:
 - Reduce `CROSS_VALIDATION_FOLDS` from 5 to 3
 - Decrease `HYPERPARAMETER_ITERATIONS` from 20 to 10
-- Consider removing computationally expensive models (XGBoost, LightGBM, CatBoost)
+- Consider using only fastest models (Random Forest, Extra Trees) for initial exploration
 
 **For High-Dimensional Data (>100 features)**:
 - Tighten `CORRELATION_THRESHOLD` to 0.90
