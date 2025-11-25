@@ -240,6 +240,7 @@ The first executable cell handles all initial setup interactively:
 - **Select by number** (e.g., enter "5" for the 5th column)
 - Eliminates typos and ensures valid selection
 - Selected column is **protected** from all automated cleaning
+- **Automatically removes rows** with missing target values (cannot train models on missing targets)
 
 **Step 3: Stacking Analysis Option**
 - Asks if you want to run ensemble stacking after individual models
@@ -268,13 +269,13 @@ If you choose "no" in the first cell, you'll be prompted again before the stacki
 #### Missing Data Handling
 ```python
 MAX_MISSING_DATA = 0.4            # Remove columns with >40% missing (AUTOMATED)
-LOW_MISSING_THRESHOLD = 0.05      # <5% missing → Simple imputation (median/mode)
+LOW_MISSING_THRESHOLD = 0.05      # <5% missing → Simple imputation (median for numeric, mode for categorical)
 MEDIUM_MISSING_THRESHOLD = 0.20   # 5-20% missing → KNN imputation
 HIGH_MISSING_THRESHOLD = 0.40     # 20-40% missing → Iterative imputation (MICE)
 ```
 
 **Automated Imputation Strategy:**
-- **< 5%**: Median (numeric) or mode (categorical) - Fast and effective
+- **< 5%**: Median for numeric, mode for categorical - Fast and effective
 - **5-20%**: KNN imputation - Preserves local relationships
 - **20-40%**: Iterative/MICE imputation - Advanced statistical modeling
 - **> 40%**: Column automatically dropped (unless it's the protected target variable)
