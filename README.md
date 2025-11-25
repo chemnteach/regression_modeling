@@ -38,13 +38,13 @@ This project provides an end-to-end automated workflow for regression modeling t
 ## 🔧 Requirements
 
 ### System Requirements
-- **Python Version**: 3.10+ (Tested on 3.12.0)
+- **Python Version**: 3.10+ (Tested on 3.12.0) - [Download Python 3.12.x](https://www.python.org/downloads/)
 - **Operating System**: Windows, macOS, or Linux
 - **RAM**: 16GB minimum (more recommended for large datasets)
 - **Storage**: 500MB for dependencies + space for your data
 
 ### Python Version Note
-While developed with Python 3.12.0, this project should work with Python 3.10 or higher. If you encounter compatibility issues, we recommend using Python 3.12.x for best results.
+While developed with Python 3.12.0, this project should work with Python 3.10 or higher. If you encounter compatibility issues, we recommend using [Python 3.12.x](https://www.python.org/downloads/) for best results.
 
 ---
 
