@@ -766,22 +766,19 @@ Three high-resolution (300 DPI) plots generated for each model and stacking ense
 
 ## 🤖 Supported Models
 
-### Base Learners (10 Algorithms)
+### Base Learners (8 Algorithms)
 
 | Category | Models |
 |----------|--------|
-| **Linear** | Linear Regression, Ridge, ElasticNet |
 | **Tree-Based** | Random Forest, Extra Trees, Gradient Boosting |
 | **Boosting** | XGBoost, LightGBM, CatBoost |
 | **Instance-Based** | KNN Regressor |
-| **Kernel** | Support Vector Regressor (SVR) |
 | **Ensemble** | Bagging Regressor |
 
 ### Meta-Learners (Stacking)
 
-- Ridge Regression (default best performer)
+- All 8 base learners
 - Linear Regression
-- Support Vector Regressor (RBF kernel)
 
 ### Model Selection Criteria
 - **Primary Metric**: R² score (coefficient of determination)
