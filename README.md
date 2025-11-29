@@ -8,7 +8,7 @@ This project provides an end-to-end automated workflow for regression modeling t
 - **Intelligent Data Preprocessing**: Automated missing data imputation, outlier detection, and quality checks
 - **Feature Selection**: Multiple reduction strategies (correlation-based, variance-based, tree-based importance)
 - **Model Comparison**: Evaluates 10+ regression algorithms with hyperparameter optimization
-- **Ensemble Methods**: Stacking regressors with multiple meta-learners for optimal performance
+- **Ensemble Methods**: Optimized stacking regressors (automatically runs) with multiple meta-learners
 - **Export Capabilities**: Generates comprehensive Excel reports and publication-ready PNG plots
 
 ### Key Features
@@ -117,8 +117,8 @@ jupyter notebook "Feature Reduction.ipynb"
    - Prompt you to select your CSV file
    - Display all numeric columns with statistics
    - Ask you to select your target variable by number (no typos!)
-   - Ask if you want to run stacking ensemble analysis
 4. Run all remaining cells (or Kernel → Run All)
+   - Stacking ensemble analysis runs automatically (optimized for ~1 hour runtime)
 5. Find outputs in the project directory:
    - `feature_importance_scores.csv` - Feature rankings
    - `Feature_Analysis_Report_YYYYMMDD_HHMMSS.xlsx` - Comprehensive 3-tab report
@@ -203,12 +203,11 @@ The notebook follows a 7-stage pipeline:
 └─────────────────────────────────────────────────────────────┘
                           ↓
 ┌─────────────────────────────────────────────────────────────┐
-│ 7. ENSEMBLE STACKING (OPTIONAL)                             │
-│    → User prompted if not auto-enabled                      │
-│    → Combine top models with stacking ensemble              │
+│ 7. ENSEMBLE STACKING (AUTOMATIC)                            │
+│    → Combine top models with optimized stacking ensemble    │
 │    → Test multiple meta-learners                            │
 │    → Select best performing combination                     │
-│    → Skipped entirely if user declines                      │
+│    → Runs automatically (~1 hour with optimizations)        │
 └─────────────────────────────────────────────────────────────┘
                           ↓
 ┌─────────────────────────────────────────────────────────────┐
@@ -237,23 +236,15 @@ The first executable cell handles all initial setup interactively:
 - Selected column is **protected** from all automated cleaning
 - **Automatically removes rows** with missing target values (cannot train models on missing targets)
 
-**Step 3: Stacking Analysis Option**
-- Asks if you want to run ensemble stacking after individual models
-- **Choose "yes"** if:
-  - Individual models have moderate R² (0.7-0.9)
-  - You want maximum performance
-  - Computational time is acceptable
-- **Choose "no"** if:
-  - An individual model achieves excellent R² (>0.95)
-  - You prefer simpler, more interpretable models
-  - Time is constrained
-
-**Conditional Stacking Behavior:**
-If you choose "no" in the first cell, you'll be prompted again before the stacking section:
-- Review individual model performance first
-- Decide whether to continue based on actual results
-- Enter "yes" or "no" to proceed or skip
-- Stacking is completely skipped if declined, saving computation time
+**Step 3: Automatic Stacking Ensemble**
+- Stacking ensemble analysis **runs automatically** after individual models
+- Combines top-performing models to maximize predictive performance
+- Uses optimized approach that completes in ~1 hour (8x faster than standard)
+- Benefits:
+  - Generates out-of-fold predictions from base learners once
+  - Tests 9 different meta-learners on pre-generated predictions
+  - No redundant model retraining (89 operations vs 720)
+  - Always produces best possible ensemble performance
 
 ---
 
@@ -779,7 +770,7 @@ Three high-resolution (300 DPI) plots generated for each model and stacking ense
 - **Primary Metric**: R² score (coefficient of determination)
 - **Validation**: 5-fold cross-validation
 - **Optimization**: RandomizedSearchCV with 20 iterations
-- **Selection**: Top 5 base models → Stacking → Best meta-learner
+- **Selection**: Top 5 base models → Automatic Stacking → Best meta-learner
 
 ---
 
