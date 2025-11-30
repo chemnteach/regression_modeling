@@ -9,7 +9,7 @@ This project provides an end-to-end automated workflow for regression modeling t
 - **Feature Selection**: Multiple reduction strategies (correlation-based, variance-based, tree-based importance)
 - **Model Comparison**: Evaluates 10+ regression algorithms with hyperparameter optimization
 - **Ensemble Methods**: Optimized stacking regressors (automatically runs) with multiple meta-learners
-- **Export Capabilities**: Generates comprehensive Excel reports and publication-ready PNG plots
+- **Export Capabilities**: Generates comprehensive Excel reports, JSON feature lists, and publication-ready PNG plots
 
 ### Key Features
 ✅ **"Hit and Walk Away" Automation** - Set target variable once and run entire pipeline  
@@ -121,7 +121,8 @@ jupyter notebook "Feature Reduction.ipynb"
    - Stacking ensemble analysis runs automatically (optimized for ~1 hour runtime)
 5. Find outputs in the project directory:
    - `feature_importance_scores.csv` - Feature rankings
-   - `Feature_Analysis_Report_YYYYMMDD_HHMMSS.xlsx` - Comprehensive 3-tab report
+   - `Feature_Analysis_Report_YYYYMMDD_HHMMSS.xlsx` - Comprehensive 5-tab report
+   - `model_features_YYYYMMDD_HHMMSS.json` - Feature list for deployment
    - `best_model_*.png` - High-resolution model plots (if plot-saving cell is run)
    - `*.pkl` - Trained model pipelines for deployment
 
@@ -213,7 +214,7 @@ The notebook follows a 7-stage pipeline:
 ┌─────────────────────────────────────────────────────────────┐
 │ 8. EXPORT RESULTS                                           │
 │    → CSV: Feature importance scores                         │
-│    → Excel: 3-tab comprehensive report                      │
+│    → Excel: 5-tab comprehensive report                      │
 │    → PNG: High-resolution model plots                       │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -690,7 +691,7 @@ Contains ranked features with comprehensive statistics from ensemble-based featu
 ### 2. Excel Comprehensive Report
 **Filename**: `Feature_Analysis_Report_YYYYMMDD_HHMMSS.xlsx`
 
-Four-tab workbook with comprehensive analysis:
+Five-tab workbook with comprehensive analysis:
 
 #### Tab 1: Narrative
 - Executive summary
@@ -719,7 +720,14 @@ Four-tab workbook with comprehensive analysis:
 - Data type and threshold category
 - Empty if no imputation tracking available
 
-**Use Case**: Client presentations, stakeholder reports, documentation, data quality audits
+#### Tab 5: Model Progression
+- R² scores for each model across all pipeline stages
+- Columns: Model, Initial_R2, Baseline_CV_R2, Optimized_CV_R2, Validation_R2, Stacking_R2, Best_R2
+- Shows performance improvement from initial screening through final stacking
+- Sorted by Best_R2 (highest score across all stages)
+- Stacking models marked with suffix "_stack" and only have Stacking_R2 populated
+
+**Use Case**: Client presentations, stakeholder reports, documentation, data quality audits, model development tracking
 
 ---
 
@@ -747,6 +755,27 @@ Three high-resolution (300 DPI) plots generated for each model and stacking ense
 - `final_modeling_data_post_feature_selection_YYYYMMDD_HHMMSS.csv` - After feature selection
 
 **Use Case**: Audit trail, reproducibility, data quality verification, intermediate analysis
+
+---
+
+### 5. Feature List JSON
+**Filename**: `model_features_YYYYMMDD_HHMMSS.json`
+
+Machine-readable feature list for model deployment and validation.
+
+**Contents**:
+```json
+{
+  "generated": "2025-01-15 14:30:45",
+  "target_variable": "Resistance",
+  "feature_count": 18,
+  "features": ["Feature1", "Feature2", ...],
+  "best_model": "ExtraTreesRegressor",
+  "best_r2": 0.9234
+}
+```
+
+**Use Case**: Model deployment validation, feature consistency checks, CI/CD pipelines, API integration
 
 ---
 
@@ -874,6 +903,6 @@ Built with:
 
 ---
 
-**Last Updated**: November 24, 2025  
-**Version**: 1.0  
+**Last Updated**: January 15, 2025  
+**Version**: 1.1  
 **Status**: Production Ready ✅ 
