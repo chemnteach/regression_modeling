@@ -123,6 +123,7 @@ jupyter notebook "Feature Reduction.ipynb"
    - `feature_importance_scores.csv` - Feature rankings
    - `Feature_Analysis_Report_YYYYMMDD_HHMMSS.xlsx` - Comprehensive 5-tab report
    - `model_features_YYYYMMDD_HHMMSS.json` - Feature list for deployment
+   - `logs/feature_reduction_YYYYMMDD_HHMMSS.log` - Pipeline execution log
    - `best_model_*.png` - High-resolution model plots (if plot-saving cell is run)
    - `*.pkl` - Trained model pipelines for deployment
 
@@ -776,6 +777,45 @@ Machine-readable feature list for model deployment and validation.
 ```
 
 **Use Case**: Model deployment validation, feature consistency checks, CI/CD pipelines, API integration
+
+---
+
+### 6. Pipeline Logs
+**Location**: `logs/` folder  
+**Filename**: `feature_reduction_YYYYMMDD_HHMMSS.log`
+
+Comprehensive logging of all pipeline stages for debugging, auditing, and reproducibility.
+
+**Log Levels**:
+| Level | Description | Written To |
+|-------|-------------|------------|
+| **DEBUG** | Detailed diagnostic info (parameters, feature lists) | File only |
+| **INFO** | Key pipeline events (data loaded, models trained) | File + Console |
+| **WARNING** | Non-critical issues (missing optional data) | File + Console |
+| **ERROR** | Failures requiring attention | File + Console |
+
+**Log Format**:
+```
+2025-11-30 14:30:45 | INFO     | Feature Reduction Pipeline Started
+2025-11-30 14:30:45 | INFO     | Data loaded: 1,234 rows × 56 columns
+2025-11-30 14:30:45 | DEBUG    | Configuration: CORRELATION_THRESHOLD=0.95, CUTOFF_R2=0.5
+2025-11-30 14:31:02 | INFO     | Feature selection complete: 18 features selected
+2025-11-30 14:45:23 | INFO     | Hyperparameter optimization - RF: R² = 0.9242 (optimized)
+2025-11-30 15:30:45 | INFO     | Best stacking meta-learner: ETR with R² = 0.9587
+2025-11-30 15:30:46 | INFO     | PIPELINE COMPLETED SUCCESSFULLY
+```
+
+**Key Events Logged**:
+- Pipeline start/end timestamps
+- Data loading (rows, columns, target variable)
+- Configuration constants
+- Feature selection results
+- Model optimization scores
+- Stacking ensemble results
+- Report generation status
+- Errors with full context
+
+**Use Case**: Debugging failed runs, audit trails, performance tracking, reproducing results
 
 ---
 
