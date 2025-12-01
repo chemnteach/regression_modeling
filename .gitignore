@@ -47,3 +47,4 @@ desktop.ini
 .idea/ 
 *.sublime-workspace 
 *.sublime-project 
+!C:\Users\cdbrown\OneDrive - Intel Corporation\Documents\P\Python\regression_modeling\GMZ_Resistance_Data.csv
