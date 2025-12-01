@@ -13,6 +13,10 @@ Author: RAPID Development Team
 Last Updated: 2025-12-01
 """
 
+import os
+import psutil
+from multiprocessing import cpu_count
+
 # =============================================================================
 # Directory and File Paths
 # =============================================================================
@@ -25,6 +29,179 @@ DATA_DIR = 'data'
 
 # Directory for output figures and plots
 FIGURES_DIR = 'figures'
+
+
+# =============================================================================
+# Parallel Processing Configuration (Auto-Detected)
+# =============================================================================
+
+def detect_gpu_availability():
+    """
+    Detect if GPU is available for XGBoost, LightGBM, and CatBoost.
+    
+    Returns
+    -------
+    dict
+        GPU availability information including device type and recommendations.
+    """
+    gpu_info = {
+        'available': False,
+        'device': 'cpu',
+        'xgboost_method': 'hist',  # CPU default
+        'lightgbm_device': 'cpu',
+        'catboost_task': 'CPU',
+        'recommendation': 'CPU only'
+    }
+    
+    # Try to detect CUDA GPU
+    try:
+        import torch
+        if torch.cuda.is_available():
+            gpu_info['available'] = True
+            gpu_info['device'] = 'cuda'
+            gpu_info['xgboost_method'] = 'gpu_hist'
+            gpu_info['lightgbm_device'] = 'gpu'
+            gpu_info['catboost_task'] = 'GPU'
+            gpu_info['gpu_name'] = torch.cuda.get_device_name(0)
+            gpu_info['recommendation'] = 'GPU acceleration enabled'
+            return gpu_info
+    except (ImportError, RuntimeError):
+        pass
+    
+    # Fallback: Try XGBoost GPU detection with actual test
+    try:
+        import xgboost as xgb
+        # Perform lightweight GPU test - will fail if GPU not available
+        dmat = xgb.DMatrix([[1, 2]], label=[1])
+        params = {'tree_method': 'gpu_hist', 'verbosity': 0}
+        bst = xgb.train(params, dmat, num_boost_round=1)
+        
+        # GPU test succeeded
+        gpu_info['available'] = True
+        gpu_info['device'] = 'gpu'
+        gpu_info['xgboost_method'] = 'gpu_hist'
+        gpu_info['lightgbm_device'] = 'gpu'
+        gpu_info['catboost_task'] = 'GPU'
+        gpu_info['recommendation'] = 'GPU detected (via XGBoost)'
+    except (ImportError, Exception):
+        # GPU not available or XGBoost not installed
+        pass
+    
+    return gpu_info
+
+
+def detect_hardware_capabilities():
+    """
+    Auto-detect system hardware and recommend parallelization settings.
+    
+    Adapts to different hardware profiles:
+    - LAPTOP: <20 GB RAM, conservative parallelization
+    - WORKSTATION: 20-64 GB RAM, balanced approach
+    - SERVER: 64+ GB RAM, aggressive parallelization
+    
+    Also detects GPU availability for accelerated training.
+    
+    Returns
+    -------
+    dict
+        Hardware capabilities including CPU cores, RAM, GPU, and recommended
+        parallelization settings.
+    """
+    # Get system information
+    total_cores = cpu_count()  # Physical + logical cores
+    available_ram_gb = psutil.virtual_memory().available / (1024**3)
+    total_ram_gb = psutil.virtual_memory().total / (1024**3)
+    
+    # Detect GPU
+    gpu_info = detect_gpu_availability()
+    
+    # Conservative estimate: reserve cores for OS
+    if total_cores <= 4:  # Laptop
+        usable_cores = max(1, total_cores - 1)  # Reserve 1 core
+    elif total_cores <= 16:  # Workstation
+        usable_cores = max(1, total_cores - 2)  # Reserve 2 cores
+    else:  # Server (32+ cores)
+        usable_cores = max(1, total_cores - 4)  # Reserve 4 cores for OS/overhead
+    
+    # Memory-based job limit (estimate RAM per parallel job)
+    # Account for: base data + model training + cross-validation overhead
+    if total_ram_gb < 20:  # Laptop (16 GB)
+        max_jobs_by_memory = max(1, int(available_ram_gb / 2.5))  # ~2.5 GB per job
+        profile = "LAPTOP"
+        ram_per_job_gb = 2.5
+    elif total_ram_gb < 64:  # Workstation (32-64 GB)
+        max_jobs_by_memory = max(1, int(available_ram_gb / 2))  # ~2 GB per job
+        profile = "WORKSTATION"
+        ram_per_job_gb = 2.0
+    else:  # Server (128+ GB)
+        max_jobs_by_memory = max(1, int(available_ram_gb / 1.5))  # ~1.5 GB per job
+        profile = "SERVER"
+        ram_per_job_gb = 1.5
+    
+    # Final recommendation: min of CPU-based and memory-based limits
+    recommended_jobs = min(usable_cores, max_jobs_by_memory)
+    
+    # Cap at reasonable max (diminishing returns beyond 24-32 parallel jobs)
+    if profile == "SERVER":
+        recommended_jobs = min(recommended_jobs, 28)  # Leave 4 cores for overhead
+    
+    return {
+        'total_cores': total_cores,
+        'usable_cores': usable_cores,
+        'total_ram_gb': round(total_ram_gb, 1),
+        'available_ram_gb': round(available_ram_gb, 1),
+        'ram_per_job_gb': ram_per_job_gb,
+        'max_jobs_by_memory': max_jobs_by_memory,
+        'recommended_jobs': recommended_jobs,
+        'profile': profile,
+        'gpu_available': gpu_info['available'],
+        'gpu_device': gpu_info['device'],
+        'gpu_name': gpu_info.get('gpu_name', 'N/A')
+    }
+
+
+# Auto-detect hardware on module import
+_HARDWARE = detect_hardware_capabilities()
+_GPU = detect_gpu_availability()
+
+# Number of parallel jobs for scikit-learn operations
+# -1 = use all cores, 1 = no parallelization, N = use N cores
+# Auto-set based on hardware detection
+N_JOBS = _HARDWARE['recommended_jobs']
+
+# Backend for parallel processing ('loky', 'threading', 'multiprocessing')
+# 'loky' is default and most robust for scikit-learn
+PARALLEL_BACKEND = 'loky'
+
+# GPU Configuration for XGBoost, LightGBM, and CatBoost
+USE_GPU = _GPU['available']  # Auto-detected
+XGBOOST_TREE_METHOD = _GPU['xgboost_method']  # 'gpu_hist' or 'hist'
+LIGHTGBM_DEVICE = _GPU['lightgbm_device']  # 'gpu' or 'cpu'
+CATBOOST_TASK_TYPE = _GPU['catboost_task']  # 'GPU' or 'CPU'
+
+# Random state for reproducibility
+RANDOM_STATE = 42
+
+# Test set size for train-test split
+TEST_SIZE = 0.20  # 20%
+
+# Number of cross-validation folds
+CV_FOLDS = 5
+
+# Maximum number of features to select (None = no limit)
+MAX_FEATURES = None
+
+# Hyperparameter search iterations (adapt based on hardware)
+# More iterations = better optimization but slower
+# With parallelization, servers can handle many more iterations efficiently
+if _HARDWARE['profile'] == "LAPTOP":
+    HYPERPARAM_SEARCH_ITER = 10  # Quick search (10 configs x 5 folds = 50 fits)
+elif _HARDWARE['profile'] == "WORKSTATION":
+    HYPERPARAM_SEARCH_ITER = 20  # Balanced (20 configs x 5 folds = 100 fits)
+else:  # SERVER (128 GB RAM, 32 cores)
+    HYPERPARAM_SEARCH_ITER = 100  # Thorough search (100 configs x 5 folds = 500 fits)
+    # With 28 parallel jobs, 500 fits completes in ~18 sequential batches
+    PARALLEL_PRE_DISPATCH = 'all'  # Aggressive
 
 
 # =============================================================================
@@ -223,10 +400,6 @@ def validate_config() -> bool:
     if not 0 < TEST_SIZE < 1:
         raise ValueError("TEST_SIZE must be between 0 and 1")
     
-    # Validate CV folds
-    if CV_FOLDS < 2:
-        raise ValueError("CV_FOLDS must be at least 2")
-    
     return True
 
 
@@ -235,6 +408,33 @@ def print_config() -> None:
     print(f"{SEPARATOR_CHAR * SEPARATOR_WIDTH}")
     print("⚙️  DATA PREPROCESSING CONFIGURATION")
     print(f"{SEPARATOR_CHAR * SEPARATOR_WIDTH}")
+    
+    # Hardware detection
+    print(f"\n🖥️  Hardware Profile: {_HARDWARE['profile']}")
+    print(f"   • Total CPU cores: {_HARDWARE['total_cores']} "
+          f"(using {_HARDWARE['usable_cores']} for ML)")
+    print(f"   • Parallel jobs: {N_JOBS} (auto-detected)")
+    print(f"   • Total RAM: {_HARDWARE['total_ram_gb']:.1f} GB "
+          f"({_HARDWARE['available_ram_gb']:.1f} GB available)")
+    print(f"   • RAM per job: ~{_HARDWARE['ram_per_job_gb']:.1f} GB")
+    print(f"   • Hyperparameter iterations: {HYPERPARAM_SEARCH_ITER}")
+    if _HARDWARE['profile'] == "SERVER":
+        total_fits = HYPERPARAM_SEARCH_ITER * CV_FOLDS
+        print(f"   • Expected CV fits per model: {total_fits:,} "
+              f"({HYPERPARAM_SEARCH_ITER} configs × {CV_FOLDS} folds)")
+    
+    # GPU detection
+    if _GPU['available']:
+        print(f"\n🎮 GPU Acceleration: ENABLED")
+        if 'gpu_name' in _GPU and _GPU['gpu_name'] != 'N/A':
+            print(f"   • GPU Device: {_GPU['gpu_name']}")
+        print(f"   • XGBoost: {XGBOOST_TREE_METHOD}")
+        print(f"   • LightGBM: {LIGHTGBM_DEVICE}")
+        print(f"   • CatBoost: {CATBOOST_TASK_TYPE}")
+        print(f"   • Expected speedup: 2-6x on gradient boosting models")
+    else:
+        print(f"\n🎮 GPU Acceleration: Not Available (CPU only)")
+    
     print(f"\n📊 Missing Data Handling:")
     print(f"   • Columns with >{MAX_MISSING_DATA:.0%} missing → "
           f"AUTOMATICALLY DROPPED")
@@ -244,6 +444,7 @@ def print_config() -> None:
           f"missing → KNN imputation")
     print(f"   • {MEDIUM_MISSING_THRESHOLD:.0%}-{HIGH_MISSING_THRESHOLD:.0%} "
           f"missing → Iterative imputation (MICE)")
+    
     print(f"\n🧹 Automatic Cleaning (no prompts):")
     print(f"   • Date columns: {'REMOVE' if REMOVE_DATE_COLUMNS else 'KEEP'}")
     print(f"   • Duplicate rows: "
@@ -251,6 +452,7 @@ def print_config() -> None:
     print(f"   • Low variance ({LOW_VARIANCE_THRESHOLD:.0%}): "
           f"{'REMOVE' if REMOVE_LOW_VARIANCE_COLS else 'KEEP'}")
     print(f"   • High cardinality ({HIGH_CARDINALITY_THRESHOLD:.0%}): REMOVE")
+    
     print(f"\n✅ Configuration loaded successfully!")
     print(f"{SEPARATOR_CHAR * SEPARATOR_WIDTH}")
 

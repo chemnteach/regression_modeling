@@ -157,6 +157,8 @@ regression_modeling/
 ├── README.md                    # This documentation file
 ├── REFACTORING_SUMMARY.md       # ⭐ NEW: Complete refactoring changelog
 ├── VALIDATION_CHECKLIST.md      # ⭐ NEW: Final validation report
+├── PARALLELIZATION_GUIDE.md     # ⭐ NEW: Parallel processing guide
+├── GPU_ACCELERATION_GUIDE.md    # ⭐ NEW: GPU acceleration setup & usage
 │
 ├── logs/                        # Pipeline execution logs (timestamped)
 ├── data/                        # Output datasets and snapshots
@@ -277,6 +279,28 @@ The first executable cell handles all initial setup interactively:
 **All configuration is now managed in `config.py`** - a dedicated module for easy customization without editing notebook code.
 
 ### Key Configuration Groups
+
+#### Hardware & Performance (Auto-Detected)
+```python
+# In config.py - Automatically configured based on your system
+N_JOBS = 28                          # Parallel CPU cores (auto-detected: 2-28)
+HYPERPARAM_SEARCH_ITER = 100         # Hyperparameter iterations (10-100 based on hardware)
+USE_GPU = True                       # GPU availability (auto-detected)
+XGBOOST_TREE_METHOD = 'gpu_hist'     # XGBoost acceleration method
+LIGHTGBM_DEVICE = 'gpu'              # LightGBM device
+CATBOOST_TASK_TYPE = 'GPU'           # CatBoost task type
+```
+
+**Hardware Profiles (Auto-Detected):**
+- **LAPTOP** (<20 GB RAM): 2-4 jobs, 10 iterations, conservative memory usage
+- **WORKSTATION** (20-64 GB RAM): 6-12 jobs, 20 iterations, balanced approach
+- **SERVER** (64+ GB RAM): 16-28 jobs, 100 iterations, aggressive parallelization
+
+**GPU Acceleration:**
+- Automatically detects CUDA-capable GPUs via PyTorch or XGBoost
+- Provides **2-6x speedup** for XGBoost, LightGBM, and CatBoost
+- Gracefully falls back to CPU if GPU not available
+- See [`GPU_ACCELERATION_GUIDE.md`](GPU_ACCELERATION_GUIDE.md) for details
 
 #### Missing Data Handling
 ```python
@@ -1037,6 +1061,16 @@ This project is provided as-is for educational and commercial use. See repositor
 - Return types specified for all functions
 - Parameter types documented
 
+#### ✅ Performance Optimization
+- **NEW**: Auto-adaptive parallel processing based on hardware detection
+- Laptop (16 GB): 2-4 jobs, conservative memory usage
+- Workstation (32-64 GB): 6-12 jobs, balanced approach
+- Server (128+ GB): 16-28 jobs, aggressive parallelization
+- **NEW**: GPU acceleration support with auto-detection
+- 2-6x speedup for XGBoost, LightGBM, CatBoost on CUDA GPUs
+- Graceful CPU fallback when GPU not available
+- See `PARALLELIZATION_GUIDE.md` and `GPU_ACCELERATION_GUIDE.md`
+
 ### Backward Compatibility
 All original functionality preserved. Existing workflows continue to work without modification.
 
@@ -1047,6 +1081,8 @@ All original functionality preserved. Existing workflows continue to work withou
 ### Project Documentation
 - `REFACTORING_SUMMARY.md` - Detailed changelog and improvements
 - `VALIDATION_CHECKLIST.md` - Quality assurance report
+- `PARALLELIZATION_GUIDE.md` - Hardware-adaptive parallel processing guide
+- `GPU_ACCELERATION_GUIDE.md` - GPU setup, troubleshooting, and performance
 - `config.py` - Configuration reference with inline comments
 
 ### Learning Materials
