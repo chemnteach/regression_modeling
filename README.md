@@ -145,7 +145,7 @@ regression_modeling/
 ├── feature_reduction.py         # Core preprocessing functions
 │
 ├── requirements.txt             # Python package dependencies
-├── README.md                    # This file
+├── README.md                    # This file originally, converted to RAPID_USERS_GUIDE.pdf
 │
 └── venv/                        # Virtual environment (created during setup)
 ```
