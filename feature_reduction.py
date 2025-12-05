@@ -479,7 +479,10 @@ class CorrelationFilter(BaseEstimator, TransformerMixin):
     """
 
     def __init__(self, threshold: float | None = None) -> None:
-        self.threshold = threshold or config.FEATURE_CORRELATION_THRESHOLD
+        self.threshold = (
+            threshold if threshold is not None
+            else config.FEATURE_CORRELATION_THRESHOLD
+        )
         self.features_to_keep_: list[str] = []
         self.features_dropped_: list[str] = []
 
@@ -947,7 +950,10 @@ class RobustStackingRegressor:
         passthrough: bool = False
     ) -> None:
         self.base_estimators = base_estimators
-        self.meta_estimator = meta_estimator or Ridge(alpha=1.0)
+        self.meta_estimator = (
+            meta_estimator if meta_estimator is not None
+            else Ridge(alpha=1.0)
+        )
         self.cv = cv if cv is not None else config.CV_FOLDS
         self.n_jobs = n_jobs if n_jobs is not None else config.N_JOBS
         self.random_state = (
@@ -1023,6 +1029,89 @@ class RobustStackingRegressor:
             fitted_est = clone(estimator)
             fitted_est.fit(X_scaled, y)
             self.fitted_base_estimators_.append((name, fitted_est))
+
+        return self
+
+    def fit_from_oof(
+        self,
+        X: np.ndarray,
+        y: np.ndarray,
+        oof_predictions: dict[str, np.ndarray],
+        fitted_estimators: dict[str, BaseEstimator]
+    ) -> RobustStackingRegressor:
+        """Fit stacking using pre-computed OOF predictions.
+
+        This method avoids redundant re-training of base models by using
+        out-of-fold predictions that were already generated during base
+        model training.
+
+        Parameters
+        ----------
+        X : np.ndarray
+            Training features (for scaler fitting and passthrough).
+        y : np.ndarray
+            Training target.
+        oof_predictions : dict
+            Mapping of model name to OOF prediction array.
+            Keys should match the names in base_estimators.
+        fitted_estimators : dict
+            Mapping of model name to fitted estimator (Pipeline).
+            Used for inference on new data.
+
+        Returns
+        -------
+        self : RobustStackingRegressor
+            Fitted ensemble.
+
+        Notes
+        -----
+        This is more efficient than fit() when base models have already
+        been trained and OOF predictions are available.
+        """
+        # Scale input features
+        self.scaler_ = StandardScaler()
+        X_scaled = self.scaler_.fit_transform(X)
+
+        # Build meta-features from pre-computed OOF predictions
+        meta_features_list = []
+        for name, _ in self.base_estimators:
+            if name not in oof_predictions:
+                raise ValueError(
+                    f"Missing OOF predictions for '{name}'. "
+                    f"Available: {list(oof_predictions.keys())}"
+                )
+            meta_features_list.append(oof_predictions[name])
+
+        meta_features = np.column_stack(meta_features_list)
+
+        # Optionally include original features
+        if self.passthrough:
+            meta_features = np.hstack([meta_features, X_scaled])
+
+        # Fit meta-learner on OOF predictions
+        self.fitted_meta_estimator_ = clone(self.meta_estimator)
+        self.fitted_meta_estimator_.fit(meta_features, y)
+
+        # Store pre-fitted base estimators for inference
+        self.fitted_base_estimators_ = []
+        for name, _ in self.base_estimators:
+            if name not in fitted_estimators:
+                raise ValueError(
+                    f"Missing fitted estimator for '{name}'. "
+                    f"Available: {list(fitted_estimators.keys())}"
+                )
+            # Extract the model from the pipeline
+            pipeline = fitted_estimators[name]
+            if hasattr(pipeline, 'named_steps'):
+                # It's a Pipeline, extract the model
+                model = pipeline.named_steps.get('model', pipeline)
+                self.fitted_base_estimators_.append((name, model))
+            else:
+                self.fitted_base_estimators_.append((name, pipeline))
+
+        # Store base scores (from OOF R² if available)
+        for name, oof in oof_predictions.items():
+            self.base_scores_[name] = float(r2_score(y, oof))
 
         return self
 
@@ -1284,6 +1373,7 @@ class RAPIDPipeline:
         self.selected_feature_names_: list[str] = []
 
         self.best_models_: dict[str, dict[str, Any]] = {}
+        self.oof_predictions_: dict[str, np.ndarray] = {}  # OOF for stacking
         self.stacking_model_: RobustStackingRegressor | None = None
         self.model_scores_: dict[str, dict[str, Any]] = {}
 
@@ -1315,6 +1405,11 @@ class RAPIDPipeline:
             If filepath does not exist.
         ValueError
             If target_column is not in the data.
+
+        Notes
+        -----
+        Column names are normalized to lowercase with whitespace stripped
+        for consistency.
         """
         _get_logger().info(f"Loading data from {filepath}")
 
@@ -1326,26 +1421,46 @@ class RAPIDPipeline:
             )
             self.raw_data_ = pd.read_csv(filepath, encoding="latin-1")
 
-        if target_column not in self.raw_data_.columns:
+        # Normalize column names: lowercase and strip whitespace
+        original_columns = list(self.raw_data_.columns)
+        self.raw_data_.columns = (
+            self.raw_data_.columns.str.strip().str.lower()
+        )
+        
+        # Also normalize target_column for matching
+        target_column_normalized = target_column.strip().lower()
+        
+        # Log any column name changes
+        new_columns = list(self.raw_data_.columns)
+        changed = [
+            (orig, new) for orig, new in zip(original_columns, new_columns)
+            if orig != new
+        ]
+        if changed:
+            _get_logger().debug(
+                f"Normalized {len(changed)} column names to lowercase"
+            )
+
+        if target_column_normalized not in self.raw_data_.columns:
             raise ValueError(
                 f"Target column '{target_column}' not found in data. "
                 f"Available columns: {list(self.raw_data_.columns[:10])}..."
             )
 
-        self.target_column_ = target_column
+        self.target_column_ = target_column_normalized
 
         _get_logger().info(
             f"Data loaded: {self.raw_data_.shape[0]:,} rows × "
             f"{self.raw_data_.shape[1]} columns"
         )
-        _get_logger().info(f"Target column: {target_column}")
+        _get_logger().info(f"Target column: {self.target_column_}")
 
         return self
 
     def preprocess(
         self,
         drop_high_missing_threshold: float | None = None,
-        drop_string_columns: bool = True
+        encode_categoricals: bool = True
     ) -> RAPIDPipeline:
         """Preprocess data by handling missing values and problematic columns.
 
@@ -1354,13 +1469,21 @@ class RAPIDPipeline:
         drop_high_missing_threshold : float, optional
             Threshold for dropping columns with excessive missing data.
             Defaults to config.MAX_MISSING_DATA.
-        drop_string_columns : bool, default=True
-            Whether to drop non-numeric columns.
+        encode_categoricals : bool, default=True
+            Whether to encode categorical columns using tiered strategy:
+            - ≤ ONE_HOT_ENCODING_MAX_CATEGORIES: one-hot encoding
+            - ≤ LABEL_ENCODING_MAX_CATEGORIES: label encoding
+            - > LABEL_ENCODING_MAX_CATEGORIES: drop (likely ID column)
 
         Returns
         -------
         self : RAPIDPipeline
             Returns self for method chaining.
+
+        Notes
+        -----
+        Date-like columns are detected by both dtype and column name patterns
+        (configured in config.DATE_PATTERNS) and automatically dropped.
         """
         _get_logger().info("Starting preprocessing...")
 
@@ -1395,14 +1518,27 @@ class RAPIDPipeline:
             )
             df = df.drop(columns=high_missing)
 
-        # Handle string columns
+        # Detect and drop date-like columns
+        date_cols = self._detect_date_columns(df)
+        if date_cols:
+            _get_logger().info(
+                f"Dropping {len(date_cols)} date-like columns: {date_cols}"
+            )
+            df = df.drop(columns=date_cols)
+
+        # Handle string/object columns
         string_cols = df.select_dtypes(include=["object"]).columns.tolist()
         if self.target_column_ in string_cols:
             string_cols.remove(self.target_column_)
 
-        if drop_string_columns and string_cols:
-            _get_logger().info(f"Dropping {len(string_cols)} string columns")
-            df = df.drop(columns=string_cols)
+        if string_cols:
+            if encode_categoricals:
+                df = self._encode_categorical_columns(df, string_cols)
+            else:
+                _get_logger().info(
+                    f"Dropping {len(string_cols)} string columns"
+                )
+                df = df.drop(columns=string_cols)
 
         # Store feature columns
         self.feature_columns_ = [
@@ -1416,6 +1552,138 @@ class RAPIDPipeline:
         )
 
         return self
+
+    def _detect_date_columns(self, df: pd.DataFrame) -> list[str]:
+        """Detect date-like columns by dtype and name patterns.
+
+        Parameters
+        ----------
+        df : pd.DataFrame
+            DataFrame to analyze.
+
+        Returns
+        -------
+        list of str
+            Column names identified as date-like.
+        """
+        date_cols = []
+
+        for col in df.columns:
+            if col == self.target_column_:
+                continue
+
+            # Check if already datetime dtype
+            if pd.api.types.is_datetime64_any_dtype(df[col]):
+                date_cols.append(col)
+                continue
+
+            # Check column name against patterns
+            col_lower = col.lower()
+            if any(
+                pattern in col_lower
+                for pattern in config.DATE_PATTERNS
+            ):
+                date_cols.append(col)
+                continue
+
+            # For object columns, try to parse as date
+            if df[col].dtype == 'object':
+                sample = df[col].dropna().head(100)
+                if len(sample) > 0:
+                    try:
+                        pd.to_datetime(sample, format='mixed')
+                        # If successful, it's likely a date column
+                        date_cols.append(col)
+                        _get_logger().debug(
+                            f"Column '{col}' detected as date by content"
+                        )
+                    except (ValueError, TypeError):
+                        pass
+
+        return date_cols
+
+    def _encode_categorical_columns(
+        self,
+        df: pd.DataFrame,
+        string_cols: list[str]
+    ) -> pd.DataFrame:
+        """Encode categorical columns using tiered strategy.
+
+        Strategy based on cardinality:
+        - ≤ ONE_HOT_ENCODING_MAX_CATEGORIES: one-hot encoding
+        - ≤ LABEL_ENCODING_MAX_CATEGORIES: label encoding
+        - > LABEL_ENCODING_MAX_CATEGORIES: drop (likely ID)
+
+        Parameters
+        ----------
+        df : pd.DataFrame
+            DataFrame to process.
+        string_cols : list of str
+            String column names to encode.
+
+        Returns
+        -------
+        pd.DataFrame
+            DataFrame with encoded columns.
+        """
+        one_hot_threshold = config.ONE_HOT_ENCODING_MAX_CATEGORIES
+        label_threshold = config.LABEL_ENCODING_MAX_CATEGORIES
+
+        one_hot_cols = []
+        label_encode_cols = []
+        drop_cols = []
+
+        for col in string_cols:
+            n_unique = df[col].nunique()
+
+            if n_unique <= one_hot_threshold:
+                one_hot_cols.append(col)
+            elif n_unique <= label_threshold:
+                label_encode_cols.append(col)
+            else:
+                drop_cols.append(col)
+
+        # Log encoding decisions
+        if one_hot_cols:
+            _get_logger().info(
+                f"One-hot encoding {len(one_hot_cols)} columns "
+                f"(≤{one_hot_threshold} categories): {one_hot_cols}"
+            )
+        if label_encode_cols:
+            _get_logger().info(
+                f"Label encoding {len(label_encode_cols)} columns "
+                f"({one_hot_threshold+1}-{label_threshold} categories): "
+                f"{label_encode_cols}"
+            )
+        if drop_cols:
+            _get_logger().info(
+                f"Dropping {len(drop_cols)} high-cardinality columns "
+                f"(>{label_threshold} categories, likely IDs): {drop_cols}"
+            )
+
+        # Apply one-hot encoding
+        if one_hot_cols:
+            df = pd.get_dummies(
+                df,
+                columns=one_hot_cols,
+                prefix=one_hot_cols,
+                drop_first=True,  # Avoid multicollinearity
+                dtype=float
+            )
+
+        # Apply label encoding
+        for col in label_encode_cols:
+            # Create mapping preserving NaN
+            unique_vals = df[col].dropna().unique()
+            mapping = {val: idx for idx, val in enumerate(sorted(unique_vals))}
+            df[col] = df[col].map(mapping)
+            # Column is now numeric (with NaN preserved)
+
+        # Drop high-cardinality columns
+        if drop_cols:
+            df = df.drop(columns=drop_cols)
+
+        return df
 
     def split_data(self) -> RAPIDPipeline:
         """Split data into training and test sets.
@@ -1505,7 +1773,7 @@ class RAPIDPipeline:
         # Step 1c: Feature importance selection
         self.feature_selector_ = FeatureImportanceSelector(
             cumulative_threshold=config.OPTIMIZATION_CDF_THRESHOLD,
-            min_features=10,
+            min_features=config.MIN_FEATURES_TO_SELECT,
             n_jobs=config.N_JOBS,
             random_state=config.RANDOM_STATE
         )
@@ -1587,7 +1855,7 @@ class RAPIDPipeline:
         ----------
         X : pd.DataFrame
             New data to transform. Must contain columns matching
-            `selected_feature_names_`.
+            `selected_feature_names_`. Extra columns are ignored.
 
         Returns
         -------
@@ -1613,14 +1881,29 @@ class RAPIDPipeline:
                 "Pipeline must be fitted before transforming new data."
             )
 
-        # Validate required features are present
-        missing_features = set(self.selected_feature_names_) - set(X.columns)
+        # Normalize column names to match training
+        X = X.copy()
+        X.columns = X.columns.str.strip().str.lower()
+
+        required_features = set(self.selected_feature_names_)
+        provided_features = set(X.columns)
+
+        # Check for missing required features
+        missing_features = required_features - provided_features
         if missing_features:
             raise ValueError(
                 f"Input data missing required features: {missing_features}"
             )
 
-        # Extract and transform
+        # Warn about extra columns (will be ignored)
+        extra_features = provided_features - required_features
+        if extra_features:
+            _get_logger().warning(
+                f"Ignoring {len(extra_features)} extra columns not in model: "
+                f"{sorted(extra_features)[:5]}{'...' if len(extra_features) > 5 else ''}"
+            )
+
+        # Extract only required features in correct order
         X_selected = X[self.selected_feature_names_]
         X_imputed = self.production_imputer_.transform(X_selected)
 
@@ -1628,6 +1911,9 @@ class RAPIDPipeline:
 
     def train_base_models(self) -> RAPIDPipeline:
         """Train and optimize base learner models.
+
+        Also generates out-of-fold predictions for efficient stacking
+        ensemble training (avoids redundant re-training).
 
         Returns
         -------
@@ -1644,6 +1930,16 @@ class RAPIDPipeline:
         base_learners = get_base_learners()
         param_distributions = get_param_distributions()
 
+        # Helper for n_jobs with None protection
+        n_jobs = config.N_JOBS if config.N_JOBS is not None else -1
+
+        # CV splitter for OOF predictions (consistent across all models)
+        cv_splitter = KFold(
+            n_splits=config.CV_FOLDS,
+            shuffle=True,
+            random_state=config.RANDOM_STATE
+        )
+
         for name, model in base_learners:
             _get_logger().info(f"Training {name}...")
 
@@ -1656,9 +1952,9 @@ class RAPIDPipeline:
             # Baseline CV score
             cv_scores = cross_val_score(
                 pipeline, X_train_transformed, y_train,
-                cv=config.CV_FOLDS,
+                cv=cv_splitter,
                 scoring="r2",
-                n_jobs=config.N_JOBS
+                n_jobs=n_jobs
             )
             baseline_score = float(np.mean(cv_scores))
 
@@ -1669,15 +1965,18 @@ class RAPIDPipeline:
                 _get_logger().info(f"  {name} below threshold, skipping")
                 continue
 
+            # Check if hyperparameter tuning is enabled for this model
+            tuning_enabled = config.HYPERPARAM_TUNING_ENABLED.get(name, True)
+
             # Hyperparameter optimization
-            if name in param_distributions:
+            if name in param_distributions and tuning_enabled:
                 search = RandomizedSearchCV(
                     pipeline,
                     param_distributions[name],
                     n_iter=config.HYPERPARAM_SEARCH_ITER,
-                    cv=config.CV_FOLDS,
+                    cv=cv_splitter,
                     scoring="r2",
-                    n_jobs=config.N_JOBS,
+                    n_jobs=n_jobs,
                     random_state=config.RANDOM_STATE,
                     error_score="raise"
                 )
@@ -1687,24 +1986,18 @@ class RAPIDPipeline:
                     optimized_score = float(search.best_score_)
 
                     if optimized_score >= baseline_score:
-                        self.best_models_[name] = {
-                            "estimator": search.best_estimator_,
-                            "cv_score": optimized_score,
-                            "params": search.best_params_,
-                            "optimized": True
-                        }
+                        final_estimator = search.best_estimator_
+                        final_score = optimized_score
+                        optimized = True
                         _get_logger().info(
                             f"  {name} optimized CV R²: {optimized_score:.4f} "
                             f"(+{optimized_score - baseline_score:.4f})"
                         )
                     else:
                         pipeline.fit(X_train_transformed, y_train)
-                        self.best_models_[name] = {
-                            "estimator": pipeline,
-                            "cv_score": baseline_score,
-                            "params": {},
-                            "optimized": False
-                        }
+                        final_estimator = pipeline
+                        final_score = baseline_score
+                        optimized = False
                         _get_logger().info(
                             f"  {name} keeping baseline (optimization degraded)"
                         )
@@ -1712,20 +2005,38 @@ class RAPIDPipeline:
                 except Exception as e:
                     _get_logger().warning(f"  {name} optimization failed: {e}")
                     pipeline.fit(X_train_transformed, y_train)
-                    self.best_models_[name] = {
-                        "estimator": pipeline,
-                        "cv_score": baseline_score,
-                        "params": {},
-                        "optimized": False
-                    }
+                    final_estimator = pipeline
+                    final_score = baseline_score
+                    optimized = False
             else:
+                if not tuning_enabled:
+                    _get_logger().info(
+                        f"  {name} hyperparameter tuning disabled in config"
+                    )
                 pipeline.fit(X_train_transformed, y_train)
-                self.best_models_[name] = {
-                    "estimator": pipeline,
-                    "cv_score": baseline_score,
-                    "params": {},
-                    "optimized": False
-                }
+                final_estimator = pipeline
+                final_score = baseline_score
+                optimized = False
+
+            # Store best model
+            self.best_models_[name] = {
+                "estimator": final_estimator,
+                "cv_score": final_score,
+                "params": getattr(search, 'best_params_', {}) if 'search' in dir() and optimized else {},
+                "optimized": optimized
+            }
+
+            # Generate OOF predictions using the final estimator configuration
+            # This avoids re-training during stacking
+            _get_logger().debug(f"  {name} generating OOF predictions...")
+            oof_predictions = cross_val_predict(
+                clone(final_estimator),
+                X_train_transformed,
+                y_train,
+                cv=cv_splitter,
+                n_jobs=config.N_JOBS
+            )
+            self.oof_predictions_[name] = oof_predictions
 
         _get_logger().info(
             f"Trained {len(self.best_models_)} models passing threshold"
@@ -1734,7 +2045,7 @@ class RAPIDPipeline:
         return self
 
     def train_stacking_ensemble(self) -> RAPIDPipeline:
-        """Train stacking ensemble using base model predictions.
+        """Train stacking ensemble using pre-computed OOF predictions.
 
         Returns
         -------
@@ -1743,16 +2054,24 @@ class RAPIDPipeline:
 
         Notes
         -----
-        Uses out-of-fold predictions to prevent data leakage.
+        Uses out-of-fold predictions generated during train_base_models()
+        to prevent data leakage and avoid redundant re-training.
         """
         if not config.RUN_STACKING_ANALYSIS:
             _get_logger().info("Stacking analysis disabled in config")
             return self
 
-        _get_logger().info("Training stacking ensemble...")
+        _get_logger().info("Training stacking ensemble (using pre-computed OOF)...")
 
         if len(self.best_models_) < 2:
             _get_logger().warning("Not enough models for stacking (need >= 2)")
+            return self
+
+        if len(self.oof_predictions_) < 2:
+            _get_logger().warning(
+                "Not enough OOF predictions for stacking. "
+                "Ensure train_base_models() was called first."
+            )
             return self
 
         X_train_transformed = self._get_transformed_data(
@@ -1760,12 +2079,14 @@ class RAPIDPipeline:
         )
         y_train = self.y_train_.values
 
-        # Extract raw models from pipelines
+        # Build base_estimators list from best_models (for reference)
         base_estimators = []
+        fitted_estimators = {}
         for name, info in self.best_models_.items():
             pipeline = info["estimator"]
             model = clone(pipeline.named_steps["model"])
             base_estimators.append((name, model))
+            fitted_estimators[name] = pipeline
 
         # Test different meta-learners
         meta_learners = [
@@ -1796,7 +2117,14 @@ class RAPIDPipeline:
                 passthrough=False
             )
 
-            stacking.fit(X_train_transformed, y_train)
+            # Use pre-computed OOF predictions instead of re-training
+            stacking.fit_from_oof(
+                X_train_transformed,
+                y_train,
+                oof_predictions=self.oof_predictions_,
+                fitted_estimators=fitted_estimators
+            )
+
             test_score = stacking.score(
                 X_test_transformed, self.y_test_.values
             )
@@ -2565,6 +2893,253 @@ class RAPIDPipeline:
             )
 
         return figures
+
+    def generate_report(
+        self,
+        output_dir: str | None = None,
+        filename: str | None = None
+    ) -> str:
+        """Generate comprehensive multi-tab Excel report.
+
+        Creates a professional Excel workbook with the following tabs:
+        1. Narrative - Executive summary and key findings
+        2. Feature Metrics - Feature importance scores and statistics
+        3. Model Comparison - All models ranked by performance
+        4. Imputation Log - Imputation methods used per column
+        5. Model Progression - Initial → Baseline → Optimized R² progression
+
+        Parameters
+        ----------
+        output_dir : str, optional
+            Output directory. Defaults to config.DATA_DIR.
+        filename : str, optional
+            Output filename. Defaults to 'Feature_Analysis_Report_{timestamp}.xlsx'.
+
+        Returns
+        -------
+        str
+            Path to the generated Excel file.
+
+        Examples
+        --------
+        >>> pipeline.generate_report()
+        >>> pipeline.generate_report(output_dir='reports/', filename='my_report.xlsx')
+        """
+        output_dir = output_dir or config.DATA_DIR
+        os.makedirs(output_dir, exist_ok=True)
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        if filename is None:
+            filename = f"Feature_Analysis_Report_{timestamp}.xlsx"
+
+        filepath = os.path.join(output_dir, filename)
+
+        _get_logger().info(f"Generating Excel report: {filepath}")
+
+        with pd.ExcelWriter(filepath, engine="openpyxl") as writer:
+            # =================================================================
+            # TAB 1: NARRATIVE
+            # =================================================================
+            narrative_data = self._build_narrative_tab()
+            pd.DataFrame(narrative_data).to_excel(
+                writer, sheet_name="Narrative", index=False, header=False
+            )
+
+            # =================================================================
+            # TAB 2: FEATURE METRICS
+            # =================================================================
+            if self.feature_selector_ is not None:
+                feature_df = self.get_feature_importance_report()
+                feature_df.to_excel(
+                    writer, sheet_name="Feature Metrics", index=False
+                )
+
+            # =================================================================
+            # TAB 3: MODEL COMPARISON
+            # =================================================================
+            if self.model_scores_:
+                comparison_df = self._build_model_comparison_tab()
+                comparison_df.to_excel(
+                    writer, sheet_name="Model Comparison", index=False
+                )
+
+            # =================================================================
+            # TAB 4: IMPUTATION LOG
+            # =================================================================
+            if self.production_imputer_ is not None:
+                imputation_df = self._build_imputation_log_tab()
+                imputation_df.to_excel(
+                    writer, sheet_name="Imputation Log", index=False
+                )
+
+            # =================================================================
+            # TAB 5: MODEL PROGRESSION
+            # =================================================================
+            if self.best_models_:
+                progression_df = self._build_model_progression_tab()
+                progression_df.to_excel(
+                    writer, sheet_name="Model Progression", index=False
+                )
+
+        _get_logger().info(f"Excel report generated: {filepath}")
+        return filepath
+
+    def _build_narrative_tab(self) -> list[list[str]]:
+        """Build narrative tab content."""
+        # Find best model
+        best_model_name = None
+        best_r2 = -np.inf
+        for name, scores in self.model_scores_.items():
+            r2 = scores.get("test_r2", 0)
+            if r2 > best_r2:
+                best_r2 = r2
+                best_model_name = name
+
+        # Count features
+        n_original = len(self.feature_columns_) if self.feature_columns_ else 0
+        n_selected = len(self.selected_feature_names_) if self.selected_feature_names_ else 0
+
+        narrative = [
+            ["RAPID - REGRESSION ANALYSIS REPORT"],
+            [""],
+            ["Generated:", datetime.now().strftime("%Y-%m-%d %H:%M:%S")],
+            [""],
+            ["=" * 50],
+            ["EXECUTIVE SUMMARY"],
+            ["=" * 50],
+            [""],
+            ["Target Variable:", self.target_column_ or "N/A"],
+            [""],
+            ["Data Summary:"],
+            ["  Original Features:", str(n_original)],
+            ["  Selected Features:", str(n_selected)],
+            ["  Feature Reduction:", f"{(1 - n_selected/n_original)*100:.1f}%" if n_original > 0 else "N/A"],
+            [""],
+            ["Training Samples:", f"{len(self.X_train_):,}" if self.X_train_ is not None else "N/A"],
+            ["Test Samples:", f"{len(self.X_test_):,}" if self.X_test_ is not None else "N/A"],
+            [""],
+            ["=" * 50],
+            ["MODEL PERFORMANCE"],
+            ["=" * 50],
+            [""],
+            ["Best Model:", best_model_name or "N/A"],
+            ["Best Test R²:", f"{best_r2:.4f}" if best_r2 > -np.inf else "N/A"],
+            [""],
+            ["Models Trained:", str(len(self.best_models_))],
+            ["Stacking Enabled:", "Yes" if self.stacking_model_ is not None else "No"],
+            [""],
+        ]
+
+        # Add individual model scores
+        if self.model_scores_:
+            narrative.append(["Model Performance Summary:"])
+            for name, scores in sorted(
+                self.model_scores_.items(),
+                key=lambda x: x[1].get("test_r2", 0),
+                reverse=True
+            ):
+                r2 = scores.get("test_r2", 0)
+                narrative.append([f"  {name}:", f"R² = {r2:.4f}"])
+
+        narrative.extend([
+            [""],
+            ["=" * 50],
+            ["CONFIGURATION"],
+            ["=" * 50],
+            [""],
+            ["CV Folds:", str(config.CV_FOLDS)],
+            ["Test Size:", f"{config.TEST_SIZE:.0%}"],
+            ["R² Cutoff:", f"{config.CUTOFF_R2:.2f}"],
+            ["Correlation Threshold:", f"{config.FEATURE_CORRELATION_THRESHOLD:.2f}"],
+            ["Cumulative Importance:", f"{config.OPTIMIZATION_CDF_THRESHOLD:.0%}"],
+        ])
+
+        return narrative
+
+    def _build_model_comparison_tab(self) -> pd.DataFrame:
+        """Build model comparison DataFrame."""
+        data = []
+        for name, scores in self.model_scores_.items():
+            row = {
+                "Model": name,
+                "Test_R2": scores.get("test_r2"),
+                "CV_R2": self.best_models_.get(name, {}).get("cv_score"),
+                "Test_RMSE": scores.get("test_rmse"),
+                "Test_MAE": scores.get("test_mae"),
+                "Optimized": self.best_models_.get(name, {}).get("optimized", False),
+            }
+            data.append(row)
+
+        df = pd.DataFrame(data)
+        df = df.sort_values("Test_R2", ascending=False, na_position="last")
+        df.insert(0, "Rank", range(1, len(df) + 1))
+        return df
+
+    def _build_imputation_log_tab(self) -> pd.DataFrame:
+        """Build imputation log DataFrame."""
+        data = []
+
+        if hasattr(self.production_imputer_, "imputation_info_"):
+            for col, info in self.production_imputer_.imputation_info_.items():
+                data.append({
+                    "Column": col,
+                    "Missing_Pct": info.get("missing_pct", 0),
+                    "Method": info.get("method", "Unknown"),
+                    "Fill_Value": str(info.get("fill_value", ""))[:50]
+                })
+        else:
+            # Fallback: show columns that had missing data
+            if self.X_train_ is not None:
+                missing = self.X_train_.isnull().mean()
+                for col, pct in missing[missing > 0].items():
+                    data.append({
+                        "Column": col,
+                        "Missing_Pct": pct,
+                        "Method": "Tiered (auto)",
+                        "Fill_Value": ""
+                    })
+
+        if not data:
+            data = [{"Column": "No imputation required", "Missing_Pct": 0,
+                     "Method": "N/A", "Fill_Value": ""}]
+
+        return pd.DataFrame(data)
+
+    def _build_model_progression_tab(self) -> pd.DataFrame:
+        """Build model progression DataFrame."""
+        data = []
+
+        for name, info in self.best_models_.items():
+            cv_score = info.get("cv_score", 0)
+            test_score = self.model_scores_.get(name, {}).get("test_r2", 0)
+            optimized = info.get("optimized", False)
+
+            data.append({
+                "Model": name,
+                "Baseline_CV_R2": cv_score if not optimized else None,
+                "Optimized_CV_R2": cv_score if optimized else None,
+                "Test_R2": test_score,
+                "Optimized": optimized,
+                "Delta": test_score - cv_score if cv_score else None
+            })
+
+        # Add stacking if present
+        if "Stacking" in self.model_scores_:
+            stack_score = self.model_scores_["Stacking"].get("test_r2", 0)
+            meta_learner = self.model_scores_["Stacking"].get("meta_learner", "Unknown")
+            data.append({
+                "Model": f"Stacking ({meta_learner})",
+                "Baseline_CV_R2": None,
+                "Optimized_CV_R2": None,
+                "Test_R2": stack_score,
+                "Optimized": True,
+                "Delta": None
+            })
+
+        df = pd.DataFrame(data)
+        df = df.sort_values("Test_R2", ascending=False, na_position="last")
+        df.insert(0, "Rank", range(1, len(df) + 1))
+        return df
 
     def save_results(self, output_dir: str | None = None) -> None:
         """Save models, reports, and metrics to disk.

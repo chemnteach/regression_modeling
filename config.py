@@ -263,6 +263,22 @@ FEATURE_IMPORTANCE_N_ESTIMATORS = 100
 # Note: LGB and ETR available but historically added little value
 FEATURE_IMPORTANCE_MODELS = ['RF', 'XGB', 'GBT', 'CB']
 
+# Minimum number of features to retain after selection (floor)
+MIN_FEATURES_TO_SELECT = 10
+
+# Enable/disable hyperparameter tuning per model
+# Set to False to skip tuning and use defaults (faster)
+HYPERPARAM_TUNING_ENABLED = {
+    'RF': True,
+    'XGB': True,
+    'GBT': True,
+    'CB': True,
+    'LGB': True,
+    'KNN': True,
+    'ETR': True,
+    'Bag': True,
+}
+
 # Maximum iterations for iterative imputer
 ITERATIVE_IMPUTER_MAX_ITER = 10
 
