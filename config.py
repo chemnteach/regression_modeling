@@ -245,6 +245,47 @@ LOW_VARIANCE_THRESHOLD = 0.01  # 1%
 # Correlation threshold for feature importance
 CORRELATION_THRESHOLD = 0.10  # 10%
 
+# Correlation threshold for removing highly correlated features (multicollinearity)
+FEATURE_CORRELATION_THRESHOLD = 0.95  # 95%
+
+# Minimum ratio of features to retain after selection
+MIN_FEATURE_RETENTION_RATIO = 0.20  # 20%
+
+# Cumulative importance threshold for feature selection
+OPTIMIZATION_CDF_THRESHOLD = 0.95  # 95%
+
+# Number of trees for feature importance estimation
+FEATURE_IMPORTANCE_N_ESTIMATORS = 100
+
+# Models to use for feature importance calculation
+# Available: 'RF' (RandomForest), 'XGB' (XGBoost), 'GBT' (GradientBoosting), 
+#            'CB' (CatBoost), 'LGB' (LightGBM), 'ETR' (ExtraTrees)
+# Note: LGB and ETR available but historically added little value
+FEATURE_IMPORTANCE_MODELS = ['RF', 'XGB', 'GBT', 'CB']
+
+# Maximum iterations for iterative imputer
+ITERATIVE_IMPUTER_MAX_ITER = 10
+
+# R² cutoff threshold for base model selection
+CUTOFF_R2 = 0.30  # 30%
+
+
+# =============================================================================
+# Visualization Settings
+# =============================================================================
+
+# Number of top features to display in importance plots
+FEATURE_IMPORTANCE_TOP_N = 20
+
+# Figure size for feature importance plots
+FEATURE_IMPORTANCE_FIGSIZE = (10, 8)
+
+# Whether to use square root scale for importance visualization
+FEATURE_IMPORTANCE_USE_SQRT_SCALE = True
+
+# Number of bins for histograms
+HISTOGRAM_BINS = 50
+
 
 # =============================================================================
 # Data Cleaning Flags
@@ -318,8 +359,8 @@ SEPARATOR_CHAR = '='
 # Model Evaluation Metrics
 # =============================================================================
 
-# Primary metric for model evaluation (R², MAE, MSE, RMSE)
-PRIMARY_METRIC = 'R²'
+# Primary metric for model evaluation (RÂ², MAE, MSE, RMSE)
+PRIMARY_METRIC = 'RÂ²'
 
 # Whether to include stacking ensemble analysis
 RUN_STACKING_ANALYSIS = True
@@ -406,54 +447,54 @@ def validate_config() -> bool:
 def print_config() -> None:
     """Print current configuration settings in a formatted display."""
     print(f"{SEPARATOR_CHAR * SEPARATOR_WIDTH}")
-    print("⚙️  DATA PREPROCESSING CONFIGURATION")
+    print("âš™ï¸  DATA PREPROCESSING CONFIGURATION")
     print(f"{SEPARATOR_CHAR * SEPARATOR_WIDTH}")
     
     # Hardware detection
-    print(f"\n🖥️  Hardware Profile: {_HARDWARE['profile']}")
-    print(f"   • Total CPU cores: {_HARDWARE['total_cores']} "
+    print(f"\nðŸ–¥ï¸  Hardware Profile: {_HARDWARE['profile']}")
+    print(f"   â€¢ Total CPU cores: {_HARDWARE['total_cores']} "
           f"(using {_HARDWARE['usable_cores']} for ML)")
-    print(f"   • Parallel jobs: {N_JOBS} (auto-detected)")
-    print(f"   • Total RAM: {_HARDWARE['total_ram_gb']:.1f} GB "
+    print(f"   â€¢ Parallel jobs: {N_JOBS} (auto-detected)")
+    print(f"   â€¢ Total RAM: {_HARDWARE['total_ram_gb']:.1f} GB "
           f"({_HARDWARE['available_ram_gb']:.1f} GB available)")
-    print(f"   • RAM per job: ~{_HARDWARE['ram_per_job_gb']:.1f} GB")
-    print(f"   • Hyperparameter iterations: {HYPERPARAM_SEARCH_ITER}")
+    print(f"   â€¢ RAM per job: ~{_HARDWARE['ram_per_job_gb']:.1f} GB")
+    print(f"   â€¢ Hyperparameter iterations: {HYPERPARAM_SEARCH_ITER}")
     if _HARDWARE['profile'] == "SERVER":
         total_fits = HYPERPARAM_SEARCH_ITER * CV_FOLDS
-        print(f"   • Expected CV fits per model: {total_fits:,} "
-              f"({HYPERPARAM_SEARCH_ITER} configs × {CV_FOLDS} folds)")
+        print(f"   â€¢ Expected CV fits per model: {total_fits:,} "
+              f"({HYPERPARAM_SEARCH_ITER} configs Ã— {CV_FOLDS} folds)")
     
     # GPU detection
     if _GPU['available']:
-        print(f"\n🎮 GPU Acceleration: ENABLED")
+        print(f"\nðŸŽ® GPU Acceleration: ENABLED")
         if 'gpu_name' in _GPU and _GPU['gpu_name'] != 'N/A':
-            print(f"   • GPU Device: {_GPU['gpu_name']}")
-        print(f"   • XGBoost: {XGBOOST_TREE_METHOD}")
-        print(f"   • LightGBM: {LIGHTGBM_DEVICE}")
-        print(f"   • CatBoost: {CATBOOST_TASK_TYPE}")
-        print(f"   • Expected speedup: 2-6x on gradient boosting models")
+            print(f"   â€¢ GPU Device: {_GPU['gpu_name']}")
+        print(f"   â€¢ XGBoost: {XGBOOST_TREE_METHOD}")
+        print(f"   â€¢ LightGBM: {LIGHTGBM_DEVICE}")
+        print(f"   â€¢ CatBoost: {CATBOOST_TASK_TYPE}")
+        print(f"   â€¢ Expected speedup: 2-6x on gradient boosting models")
     else:
-        print(f"\n🎮 GPU Acceleration: Not Available (CPU only)")
+        print(f"\nðŸŽ® GPU Acceleration: Not Available (CPU only)")
     
-    print(f"\n📊 Missing Data Handling:")
-    print(f"   • Columns with >{MAX_MISSING_DATA:.0%} missing → "
+    print(f"\nðŸ“Š Missing Data Handling:")
+    print(f"   â€¢ Columns with >{MAX_MISSING_DATA:.0%} missing â†’ "
           f"AUTOMATICALLY DROPPED")
-    print(f"   • <{LOW_MISSING_THRESHOLD:.0%} missing → "
+    print(f"   â€¢ <{LOW_MISSING_THRESHOLD:.0%} missing â†’ "
           f"Simple imputation (median/mode)")
-    print(f"   • {LOW_MISSING_THRESHOLD:.0%}-{MEDIUM_MISSING_THRESHOLD:.0%} "
-          f"missing → KNN imputation")
-    print(f"   • {MEDIUM_MISSING_THRESHOLD:.0%}-{HIGH_MISSING_THRESHOLD:.0%} "
-          f"missing → Iterative imputation (MICE)")
+    print(f"   â€¢ {LOW_MISSING_THRESHOLD:.0%}-{MEDIUM_MISSING_THRESHOLD:.0%} "
+          f"missing â†’ KNN imputation")
+    print(f"   â€¢ {MEDIUM_MISSING_THRESHOLD:.0%}-{HIGH_MISSING_THRESHOLD:.0%} "
+          f"missing â†’ Iterative imputation (MICE)")
     
-    print(f"\n🧹 Automatic Cleaning (no prompts):")
-    print(f"   • Date columns: {'REMOVE' if REMOVE_DATE_COLUMNS else 'KEEP'}")
-    print(f"   • Duplicate rows: "
+    print(f"\nðŸ§¹ Automatic Cleaning (no prompts):")
+    print(f"   â€¢ Date columns: {'REMOVE' if REMOVE_DATE_COLUMNS else 'KEEP'}")
+    print(f"   â€¢ Duplicate rows: "
           f"{'REMOVE' if REMOVE_DUPLICATE_ROWS else 'KEEP'}")
-    print(f"   • Low variance ({LOW_VARIANCE_THRESHOLD:.0%}): "
+    print(f"   â€¢ Low variance ({LOW_VARIANCE_THRESHOLD:.0%}): "
           f"{'REMOVE' if REMOVE_LOW_VARIANCE_COLS else 'KEEP'}")
-    print(f"   • High cardinality ({HIGH_CARDINALITY_THRESHOLD:.0%}): REMOVE")
+    print(f"   â€¢ High cardinality ({HIGH_CARDINALITY_THRESHOLD:.0%}): REMOVE")
     
-    print(f"\n✅ Configuration loaded successfully!")
+    print(f"\nâœ… Configuration loaded successfully!")
     print(f"{SEPARATOR_CHAR * SEPARATOR_WIDTH}")
 
 
